@@ -2,6 +2,8 @@ stages:
   - buildarm64v8
 
 build:
+  tags:
+    - docker
   stage: buildarm64v8
   script:
     - make targets
