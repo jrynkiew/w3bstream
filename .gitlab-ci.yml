@@ -6,4 +6,6 @@ build:
     - docker
   stage: buildarm64v8
   script:
+    - export DOCKER_BUILDKIT=0
+    - export COMPOSE_DOCKER_CLI_BUILD=0
     - docker-compose -f docker-compose.dev.yaml build
