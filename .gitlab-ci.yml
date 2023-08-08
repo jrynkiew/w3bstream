@@ -6,4 +6,4 @@ build:
     - docker
   stage: buildarm64v8
   script:
-    - sudo make images
+    - make images

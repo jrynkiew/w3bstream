@@ -2,7 +2,7 @@
 #ARG DOCKER_REGISTRY=hub.docker.com
 #ARG GO_VERSION=1.19
 FROM arm64v8/golang:1.20 AS builder
-
+SHELL [ "/bin/bash", "-c" ]
 # setup private pkg if needs
 #ARG GITHUB_CI_TOKEN
 #ARG GITHUB_HOST=github.com
