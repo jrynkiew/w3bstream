@@ -6,4 +6,4 @@ build:
     - docker
   stage: buildarm64v8
   script:
-    - make targets
+    - docker-compose -f docker-compose.dev.yaml build
