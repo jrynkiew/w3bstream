@@ -6,4 +6,4 @@ build:
     - docker
   stage: buildarm64v8
   script:
-    - docker-compose -f docker-compose.dev.yaml build
+    - docker buildx build --tag w3bstream:arm64v8 --platform linux/arm64 -f Dockerfile --build-arg BUILDKIT_INLINE_CACHE=1 --progress=plain --file Dockerfile --ssh default .
