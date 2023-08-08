@@ -47,4 +47,4 @@ clean:
 
 .PHONY: image
 image:
-	@cd ${REPO_ROOT} && docker build -f cmd/srv-applet-mgr/Dockerfile . -t $(USER)/w3bstream:${VERSION}
+	@cd ${REPO_ROOT} && docker buildx build -f cmd/srv-applet-mgr/Dockerfile . -t $(USER)/w3bstream:${VERSION} --platform linux/arm64
