@@ -1,0 +1,7 @@
+stages:
+  - buildarm64v8
+
+build:
+  stage: buildarm64v8
+  script:
+    - make targets
