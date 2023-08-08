@@ -1,6 +1,6 @@
 services:
   myservice:
-    platform: linux/arm64
+    platform: linux/x86_64
     build:
       context: .
       dockerfile: Dockerfile
