@@ -17,7 +17,8 @@ COPY ./ ./
 
 # build
 #ARG COMMIT_SHA
-RUN cd ./cmd/srv-applet-mgr && /bin/bash -c make target
+SHELL [ "/bin/sh", "-c" ]
+RUN cd ./cmd/srv-applet-mgr && make target
 
 # runtime
 FROM arm64v8/golang:1.20 AS runtime
