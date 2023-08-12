@@ -15,6 +15,7 @@ publish:
     - docker
   stage: publish-arm64v8
   script:
+    - docker login -u $DockerUsername -p $DockerPassword
     - make push_docker_arm64v8
 
 run:
