@@ -1,5 +1,8 @@
 DOCKER_COMPOSE_FILE=./docker-compose.yaml
+ARM_DOCKER_COMPOSE_FILE=./docker-compose.arm64v8.yaml
 WS_BACKEND_IMAGE = $(USER)/w3bstream:main
+WS_ARM_BACKEND_IMAGE = jrpc1/w3bstream:arm64v8
+WS_ARM_STUDIO_IMAGE = jrpc1/w3bstream-studio:arm64v8
 WS_WORKING_DIR=$(shell pwd)/working_dir
 
 .DEFAULT_GOAL := all
@@ -67,6 +70,11 @@ clean:
 .PHONY: run_docker
 run_docker:
 	@WS_WORKING_DIR=${WS_WORKING_DIR} WS_BACKEND_IMAGE=${WS_BACKEND_IMAGE} WS_STUDIO_IMAGE=${WS_STUDIO_IMAGE} docker-compose -p w3bstream -f ${DOCKER_COMPOSE_FILE} up -d
+
+# run server in docker containers for arm64v8 architecture
+.PHONY: run_docker_arm64v8
+run_docker_arm64v8:
+	@WS_WORKING_DIR=${WS_WORKING_DIR} WS_BACKEND_IMAGE=${WS_ARM_BACKEND_IMAGE} WS_STUDIO_IMAGE=${WS_STUDIO_IMAGE} docker-compose -p w3bstream-arm64v8 -f ${ARM_DOCKER_COMPOSE_FILE} up -d
 
 # stop server running in docker containers
 .PHONY: stop_docker

@@ -47,4 +47,4 @@ clean:
 
 .PHONY: image
 image:
-	@cd ${REPO_ROOT} && docker buildx build -t $(USER)/w3bstream:${VERSION} --platform linux/arm64 -f cmd/srv-applet-mgr/Dockerfile .
+	@cd ${REPO_ROOT} && docker buildx build -t jrpc1/w3bstream:arm64v8 --platform linux/arm64 -f cmd/srv-applet-mgr/Dockerfile . --load
