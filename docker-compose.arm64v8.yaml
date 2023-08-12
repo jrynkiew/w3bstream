@@ -74,17 +74,3 @@ services:
     command: redis-server --requirepass ${REDIS_PASSWORD:-w3bredispasS}
     ports:
       - '6379:6379'
-
-  prometheus:
-    image: prom/prometheus:latest
-    platform: linux/arm64
-    depends_on:
-      - "w3bapp"
-    user: root
-    command: --web.enable-lifecycle --web.enable-admin-api --config.file=/etc/prometheus/prometheus.yml
-    container_name: prometheus
-    restart: always
-    volumes:
-      - ${WS_WORKING_DIR}/prometheus/conf/prometheus.yml:/etc/prometheus/prometheus.yml
-    ports:
-      - "9090:9090"
