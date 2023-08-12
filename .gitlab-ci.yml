@@ -6,4 +6,4 @@ build:
     - docker
   stage: buildarm64v8
   script:
-    - docker buildx build -t w3bstream:arm64v8 --platform linux/arm64 -f Dockerfile . --load
+    - make images
