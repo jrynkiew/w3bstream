@@ -7,3 +7,5 @@ build:
   stage: buildarm64v8
   script:
     - make images
+    - make push_docker_arm64v8
+    - make run_docker_arm64v8

@@ -2,7 +2,7 @@ version: "3.6"
 
 services:
   w3bapp:
-    image: ${WS_BACKEND_IMAGE:-jrpc1/w3bstream:arm64v8}
+    image: ${WS_ARM_BACKEND_IMAGE:-jrpc1/w3bstream:arm64v8}
     platform: linux/arm64
     depends_on:
       - "postgres"
