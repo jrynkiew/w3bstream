@@ -79,7 +79,7 @@ run_docker_arm64v8:
 # push docker docker images for arm64v8 architecture
 .PHONY: push_docker_arm64v8
 push_docker_arm64v8:
-	@WS_WORKING_DIR=${WS_WORKING_DIR} WS_BACKEND_IMAGE=${WS_ARM_BACKEND_IMAGE} WS_STUDIO_IMAGE=${WS_ARM_STUDIO_IMAGE} docker push ${WS_BACKEND_IMAGE}
+	docker push ${WS_ARM_BACKEND_IMAGE}
 
 
 # stop server running in docker containers

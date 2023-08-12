@@ -1,11 +1,25 @@
 stages:
-  - buildarm64v8
+  - build-arm64v8
+  - publish-arm64v8
+  - run-arm64v8
 
 build:
   tags:
     - docker
-  stage: buildarm64v8
+  stage: build-arm64v8
   script:
     - make images
+
+publish:
+  tags:
+    - docker
+  stage: publish-arm64v8
+  script:
     - make push_docker_arm64v8
+
+run:
+  tags:
+    - docker
+  stage: run-arm64v8
+  script:
     - make run_docker_arm64v8
