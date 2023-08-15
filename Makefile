@@ -2,7 +2,6 @@ DOCKER_COMPOSE_FILE=./docker-compose.yaml
 ARM_DOCKER_COMPOSE_FILE=./docker-compose.arm64v8.yaml
 WS_BACKEND_IMAGE = $(USER)/w3bstream:main
 WS_ARM_BACKEND_IMAGE = jrpc1/w3bstream:arm64v8
-WS_ARM_STUDIO_IMAGE = jrpc1/w3bstream-studio:arm64v8
 WS_WORKING_DIR=/home/gitlab-runner/w3bstream/working_dir
 
 .DEFAULT_GOAL := all
@@ -74,7 +73,7 @@ run_docker:
 # run server in docker containers for arm64v8 architecture
 .PHONY: run_docker_arm64v8
 run_docker_arm64v8:
-	@WS_WORKING_DIR=${WS_WORKING_DIR} WS_BACKEND_IMAGE=${WS_ARM_BACKEND_IMAGE} WS_STUDIO_IMAGE=${WS_ARM_STUDIO_IMAGE} docker-compose -p w3bstream-arm64v8 -f ${ARM_DOCKER_COMPOSE_FILE} up -d
+	@WS_WORKING_DIR=${WS_WORKING_DIR} WS_BACKEND_IMAGE=${WS_ARM_BACKEND_IMAGE} WS_STUDIO_IMAGE=${WS_STUDIO_IMAGE} docker-compose -p w3bstream-arm64v8 -f ${ARM_DOCKER_COMPOSE_FILE} up -d
 
 # push docker docker images for arm64v8 architecture
 .PHONY: push_docker_arm64v8

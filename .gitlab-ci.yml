@@ -1,6 +1,6 @@
 stages:
-  - build-arm64v8
-  - publish-arm64v8
+  # - build-arm64v8
+  # - publish-arm64v8
   - run-arm64v8
 
 build:
