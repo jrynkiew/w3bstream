@@ -5,15 +5,14 @@ services:
     image: ${WS_ARM_BACKEND_IMAGE:-jrpc1/w3bstream:arm64v8}
     platform: linux/arm64
     depends_on:
-      - "postgres"
-      - "mqtt_server"
-      - "redis"
+      - 'postgres'
+      - 'mqtt_server'
     container_name: w3bstream
     working_dir: /w3bstream
     restart: always
     ports:
-      - "8888:8888"
-      - "8889:8889"
+      - '8888:8888'
+      - '8889:8889'
     environment:
       SRV_APPLET_MGR__EthClient_Endpoints: '{"4689": "https://babel-api.mainnet.iotex.io", "4690": "https://babel-api.testnet.iotex.io", "1": "https://ethereum.iotex.one/v1/mainnet", "5": "https://ethereum.iotex.one/v1/goerli", "137": "https://polygon-rpc.com", "80001": "https://mumbai.polygonscan.com/"}'
       SRV_APPLET_MGR__ChainConfig_Configs: '[{"chainID":4689,"name":"iotex-mainnet","endpoint":"https://babel-api.mainnet.iotex.io"},{"chainID":4690,"name":"iotex-testnet","endpoint":"https://babel-api.testnet.iotex.io"},{"chainID":1,"name":"ethereum-mainnet","endpoint":"https://ethereum.iotex.one/v1/mainnet"},{"chainID":5,"name":"goerli","endpoint":"https://ethereum.iotex.one/v1/goerli"},{"chainID":137,"name":"polygon-mainnet","endpoint":"https://polygon-rpc.com"},{"chainID":80001,"name":"mumbai","endpoint":"https://mumbai.polygonscan.com/"},{"name":"solana-devnet","endpoint":"https://api.devnet.solana.com"},{"name":"solana-testnet","endpoint":"https://api.testnet.solana.com"},{"name":"solana-mainnet-beta","endpoint":"https://api.mainnet-beta.solana.com"}]'
@@ -22,18 +21,40 @@ services:
       SRV_APPLET_MGR__Postgres_Master: postgresql://${POSTGRES_USER:-w3badmin}:${POSTGRES_PASSWORD:-PaSsW0Rd}@postgres:5432/${POSTGRES_DB:-w3bstream}?sslmode=disable&application_name=mgr
       SRV_APPLET_MGR__Postgres_ConnMaxLifetime: 10m
       SRV_APPLET_MGR__Postgres_PoolSize: 5
+      SRV_APPLET_MGR__Redis_Host: redis
+      SRV_APPLET_MGR__Redis_Password: 'w3bredispasS'
       SRV_APPLET_MGR__MonitorDB_Master: postgresql://${POSTGRES_USER:-w3badmin}:${POSTGRES_PASSWORD:-PaSsW0Rd}@postgres:5432/${POSTGRES_DB:-w3bstream}?sslmode=disable&application_name=monitor
       SRV_APPLET_MGR__MonitorDB_ConnMaxLifetime: 10m
       SRV_APPLET_MGR__MonitorDB_PoolSize: 5
-      SRV_APPLET_MGR__WasmDB: postgresql://${POSTGRES_USER:-w3badmin}:${POSTGRES_PASSWORD:-PaSsW0Rd}@postgres:5432
+      SRV_APPLET_MGR__WasmDBConfig_Endpoint: postgresql://${POSTGRES_USER:-w3badmin}:${POSTGRES_PASSWORD:-PaSsW0Rd}@postgres:5432
       SRV_APPLET_MGR__MqttBroker_Server: mqtt://mqtt_server:1883
       SRV_APPLET_MGR__MetricsCenter_Endpoint: http://prometheus:9090
-      SRV_APPLET_MGR__MetricsCenter_ClickHouseDSN: ""
-      SRV_APPLET_MGR__Server_Port: "8888"
-      SRV_APPLET_MGR__ServerEvent_Port: "8889"
+      SRV_APPLET_MGR__Server_Port: '8888'
+      SRV_APPLET_MGR__ServerEvent_Port: '8889'
       SRV_APPLET_MGR__LocalFS_Root: /w3bstream/asserts
     volumes:
       - ${WS_WORKING_DIR:-.}/asserts:/w3bstream/asserts
+
+  w3bstream-studio:
+    image: ${WS_STUDIO_IMAGE:-ghcr.io/machinefi/w3bstream-studio:main}
+    container_name: w3bstream-studio
+    restart: always
+    platform: linux/x86_64
+    working_dir: /w3bstream-studio
+    command: ['node', 'server.js']
+    depends_on:
+      - 'postgres'
+      - 'w3bapp'
+    ports:
+      - '3000:3000'
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-w3badmin}:${POSTGRES_PASSWORD:-PaSsW0Rd}@postgres:5432/${POSTGRES_DB:-w3bstream}
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://w3bapp:8888}
+      NEXT_PUBLIC_EVENT_URL: ${NEXT_PUBLIC_EVENT_URL:-http://w3bapp:8889}
+      NEXT_PUBLIC_MQTT_URL: ${NEXT_PUBLIC_MQTT_URL:-mqtt://mqtt_server:1883}
+      NEXT_PUBLIC_METRICS_URL: ${NEXT_PUBLIC_METRICS_URL:-http://prometheus:9090}
+      ADMIN_KEY: ${ADMIN_KEY:-iotex.W3B.admin}
+      JWT_SIGN_KEY: ${JWT_SIGN_KEY:-xxxx}
 
   mqtt_server:
     image: arm64v8/eclipse-mosquitto:1.6.15
@@ -62,6 +83,19 @@ services:
       - ${WS_WORKING_DIR:-.}/postgres:/var/lib/postgresql/data
     ports:
       - "5432:5432"
+    
+  prometheus:
+    image: imoocc/prometheus:latest
+    depends_on:
+      - 'w3bapp'
+    user: root
+    command: --web.enable-lifecycle --config.file=/etc/prometheus/prometheus.yml
+    container_name: prometheus
+    restart: always
+    volumes:
+      - ${WS_WORKING_DIR:-.}/prometheus:/data
+    ports:
+      - '9090:9090'
 
   redis:
     image: arm64v8/redis:6.2
