@@ -7,3 +7,6 @@ var
 /testutil/
 config.yml
 coverage.out
+/asserts/
+/postgres/
+/redisdb/
