@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
 
+	"github.com/machinefi/w3bstream/pkg/depends/kit/logr"
 	"github.com/machinefi/w3bstream/pkg/depends/kit/sqlx/datatypes"
 	"github.com/machinefi/w3bstream/pkg/enums"
 	"github.com/machinefi/w3bstream/pkg/errors/status"
@@ -58,11 +59,11 @@ func HandleEvent(ctx context.Context, t string, data []byte) (interface{}, error
 }
 
 func OnEvent(ctx context.Context, data []byte) (ret []*Result) {
-	var (
-		l       = types.MustLoggerFromContext(ctx)
-		r       = types.MustStrategyResultsFromContext(ctx)
-		eventID = types.MustEventIDFromContext(ctx)
+	ctx, l := logr.Start(ctx, "modules.event.OnEvent", "event_id", types.MustEventIDFromContext(ctx))
+	defer l.End()
 
+	var (
+		r       = types.MustStrategyResultsFromContext(ctx)
 		results = make(chan *Result, len(r))
 	)
 
@@ -92,7 +93,7 @@ func OnEvent(ctx context.Context, data []byte) (ret []*Result) {
 		wg.Add(1)
 		go func(v *types.StrategyResult) {
 			defer wg.Done()
-			l.WithValues("eid", eventID).Debug("instance start to process.")
+			l.Debug("instance start to process.")
 			rv := ins.HandleEvent(ctx, v.Handler, v.EventType, data)
 			results <- &Result{
 				AppletName:  v.AppletName,

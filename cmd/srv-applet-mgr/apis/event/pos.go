@@ -3,17 +3,20 @@ package event
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
 
 	"github.com/machinefi/w3bstream/cmd/srv-applet-mgr/apis/middleware"
 	"github.com/machinefi/w3bstream/pkg/depends/kit/httptransport/httpx"
+	"github.com/machinefi/w3bstream/pkg/depends/kit/logr"
 	"github.com/machinefi/w3bstream/pkg/depends/kit/statusx"
 	"github.com/machinefi/w3bstream/pkg/enums"
 	"github.com/machinefi/w3bstream/pkg/errors/status"
 	"github.com/machinefi/w3bstream/pkg/models"
 	"github.com/machinefi/w3bstream/pkg/modules/event"
+	"github.com/machinefi/w3bstream/pkg/modules/job"
 	"github.com/machinefi/w3bstream/pkg/modules/metrics"
 	"github.com/machinefi/w3bstream/pkg/modules/publisher"
 	"github.com/machinefi/w3bstream/pkg/modules/strategy"
@@ -31,16 +34,17 @@ func (r *HandleEvent) Path() string {
 }
 
 func (r *HandleEvent) Output(ctx context.Context) (interface{}, error) {
+	ctx, l := logr.Start(ctx, "api.event.HandleEvent")
+	defer l.End()
+
+	receivedTs := time.Now().UTC().UnixMilli()
 	r.EventReq.SetDefault()
 
 	if r.IsDataPush() {
 		return handleDataPush(ctx, r.Channel, r.Payload.Bytes())
 	}
 
-	pub, exist := middleware.PublisherFromContext(ctx)
-	if !exist {
-		return nil, errors.New("the publisher of the token is not found")
-	}
+	pub := middleware.MustPublisher(ctx)
 
 	var (
 		err error
@@ -78,8 +82,21 @@ func (r *HandleEvent) Output(ctx context.Context) (interface{}, error) {
 
 	ctx = types.WithEventID(ctx, r.EventID)
 	ctx = types.WithPublisher(ctx, pub.Publisher)
+
 	rsp.Results = event.OnEvent(ctx, r.Payload.Bytes())
-	metrics.EventMetricsInc(ctx, prj.AccountID.String(), prj.Name, pub.Key, r.EventType)
+	rsp.Timestamp = time.Now().UTC().UnixMilli()
+
+	job.Dispatch(ctx, job.NewEventLogTask(&models.EventLog{
+		EventInfo: models.EventInfo{
+			EventID:      r.EventID,
+			RelProject:   models.RelProject{ProjectID: prj.ProjectID},
+			RelPublisher: models.RelPublisher{PublisherID: pub.PublisherID},
+			PublishedAt:  r.Timestamp,
+			ReceivedAt:   receivedTs,
+			RespondedAt:  time.Now().UTC().UnixMilli(),
+		},
+	}))
+	go metrics.EventMetricsInc(ctx, prj.AccountID.String(), prj.Name, pub.Key, r.EventType)
 	return rsp, nil
 }
 
@@ -101,6 +118,9 @@ type (
 )
 
 func handleDataPush(ctx context.Context, ch string, payload []byte) (interface{}, error) {
+	ctx, l := logr.Start(ctx, "api.Event.HandleDataPush")
+	defer l.End()
+
 	var err error
 	ca, exist := middleware.CurrentAccountFromContext(ctx)
 	if !exist {

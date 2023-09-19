@@ -1,15 +1,20 @@
 package types
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/blocto/solana-go-sdk/client"
+	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/pkg/errors"
 	"github.com/tidwall/gjson"
 
 	"github.com/machinefi/w3bstream/pkg/depends/base/types"
@@ -63,9 +68,13 @@ func (c *ETHClientConfig) Init() {
 }
 
 type Chain struct {
-	ChainID  uint64          `json:"chainID,omitempty"`
-	Name     enums.ChainName `json:"name"`
-	Endpoint string          `json:"endpoint"`
+	ChainID                         uint64          `json:"chainID,omitempty"`
+	Name                            enums.ChainName `json:"name"`
+	Endpoint                        string          `json:"endpoint"`
+	AABundlerEndpoint               string          `json:"aaBundlerEndpoint"`
+	AAPaymasterEndpoint             string          `json:"aaPaymasterEndpoint"`
+	AAEntryPointContractAddress     string          `json:"aaEntryPointContractAddress"`
+	AAAccountFactoryContractAddress string          `json:"aaAccountFactoryContractAddress"`
 }
 
 func (c *Chain) IsSolana() bool {
@@ -76,10 +85,29 @@ func (c *Chain) IsEth() bool {
 	return c.ChainID != 0
 }
 
+func (c *Chain) IsAASupported() bool {
+	return c.AABundlerEndpoint != "" && c.AAPaymasterEndpoint != "" && c.AAEntryPointContractAddress != "" && c.AAAccountFactoryContractAddress != ""
+}
+
 type ChainConfig struct {
-	Configs  string                     `env:""     json:"-"`
-	Chains   map[enums.ChainName]*Chain `env:"-"    json:"-"`
-	ChainIDs map[uint64]*Chain          `env:"-"    json:"-"`
+	Configs          string                     `env:""     json:"-"`
+	Chains           map[enums.ChainName]*Chain `env:"-"    json:"-"`
+	ChainIDs         map[uint64]*Chain          `env:"-"    json:"-"`
+	AAUserOpEndpoint string                     `env:""     json:"-"`
+}
+
+func (cc *ChainConfig) LivenessCheck() map[string]string {
+	m := map[string]string{}
+
+	for _, c := range cc.Chains {
+		key := c.Endpoint
+		if err := cc.chainLivenessCheck(c); err != nil {
+			m[key] = err.Error()
+		} else {
+			m[key] = "ok"
+		}
+	}
+	return m
 }
 
 func (c *ChainConfig) Init() {
@@ -109,6 +137,27 @@ func (c *ChainConfig) GetChain(chainID uint64, chainName enums.ChainName) (*Chai
 	}
 	r, ok = c.Chains[chainName]
 	return r, ok
+}
+
+func (c *ChainConfig) chainLivenessCheck(chain *Chain) error {
+	if chain.IsSolana() {
+		cli := client.NewClient(chain.Endpoint)
+		_, err := cli.GetLatestBlockhash(context.Background())
+		return err
+	} else if chain.IsEth() {
+		cli, err := ethclient.Dial(chain.Endpoint)
+		if err != nil {
+			return err
+		}
+		chainID, err := cli.ChainID(context.Background())
+		if err != nil {
+			return err
+		}
+		if chainID.Uint64() != chain.ChainID {
+			return errors.Errorf("chainID mismatch, want %d, got %d", chain.ChainID, chainID.Uint64())
+		}
+	}
+	return nil
 }
 
 // aliases from base/types
@@ -209,4 +258,22 @@ func (c *RobotNotifierConfig) Init() {
 			return signature, nil
 		}
 	}
+}
+
+type Risc0Config struct {
+	Endpoint        string
+	CreateProofPath string
+}
+
+func (r *Risc0Config) LivenessCheck() map[string]string {
+	m := map[string]string{}
+
+	_, err := http.NewRequest("GET", fmt.Sprintf("http://%s", r.Endpoint), nil)
+	if err != nil {
+		m[r.Endpoint] = err.Error()
+	} else {
+		m[r.Endpoint] = "ok"
+	}
+
+	return m
 }

@@ -2,12 +2,15 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
 	"github.com/machinefi/w3bstream/cmd/srv-applet-mgr/apis"
 	"github.com/machinefi/w3bstream/cmd/srv-applet-mgr/global"
 	"github.com/machinefi/w3bstream/cmd/srv-applet-mgr/tasks"
+	"github.com/machinefi/w3bstream/pkg/depends/base/types"
+	"github.com/machinefi/w3bstream/pkg/depends/conf/logger"
 	"github.com/machinefi/w3bstream/pkg/depends/kit/kit"
 	"github.com/machinefi/w3bstream/pkg/modules/account"
 	"github.com/machinefi/w3bstream/pkg/modules/blockchain"
@@ -16,8 +19,9 @@ import (
 	"github.com/machinefi/w3bstream/pkg/modules/metrics"
 	"github.com/machinefi/w3bstream/pkg/modules/operator"
 	"github.com/machinefi/w3bstream/pkg/modules/project"
+	"github.com/machinefi/w3bstream/pkg/modules/robot_notifier"
+	"github.com/machinefi/w3bstream/pkg/modules/robot_notifier/lark"
 	"github.com/machinefi/w3bstream/pkg/modules/trafficlimit"
-	"github.com/machinefi/w3bstream/pkg/types"
 )
 
 var app = global.App
@@ -27,6 +31,9 @@ func init() {
 }
 
 func main() {
+	ctx, l := logger.NewSpanContext(global.WithContext(context.Background()), "main")
+	defer l.End()
+
 	app.Execute(func(args ...string) {
 		BatchRun(
 			func() {
@@ -39,58 +46,60 @@ func main() {
 				kit.Run(tasks.Root, global.TaskServer())
 			},
 			func() {
-				if err := project.Init(global.Context); err != nil {
-					panic(err)
-				}
-			},
-			func() {
-				if err := deploy.Init(global.Context); err != nil {
-					panic(err)
-				}
-			},
-			func() {
-				if err := trafficlimit.Init(global.Context); err != nil {
-					panic(err)
-				}
-			},
-			func() {
-				l := types.MustLoggerFromContext(global.Context)
-
-				_, l = l.Start(context.Background(), "init.CreateAdmin")
-				defer l.End()
-
-				passwd, err := account.CreateAdminIfNotExist(global.Context)
+				passwd, err := account.CreateAdminIfNotExist(ctx)
 				if err != nil {
-					l.Panic(err)
+					l.Error(err)
+					panic(err)
 				}
 				if passwd == "" {
 					l.Info("admin already exists")
 				} else {
 					l.Info("admin created, default password is: '%s'", passwd)
 				}
-			},
-			func() {
-				l := types.MustLoggerFromContext(global.Context)
 
-				_, l = l.Start(context.Background(), "init.InitChainDB")
-				defer l.End()
-
-				if err := blockchain.InitChainDB(global.Context); err != nil {
-					l.Panic(err)
-					return
+				if err := deploy.Init(ctx); err != nil {
+					l.Error(err)
+					panic(err)
+				}
+				if err := project.Init(ctx); err != nil {
+					l.Error(err)
+					panic(err)
 				}
 			},
 			func() {
-				blockchain.Monitor(global.Context)
+				if err := trafficlimit.Init(ctx); err != nil {
+					panic(err)
+				}
 			},
 			func() {
-				cronjob.Run(global.Context)
+				if err := blockchain.InitChainDB(ctx); err != nil {
+					l.Error(err)
+					panic(err)
+				}
 			},
 			func() {
-				operator.Migrate(global.Context)
+				blockchain.Monitor(ctx)
 			},
 			func() {
-				metrics.Init(global.Context)
+				cronjob.Run(ctx)
+			},
+			func() {
+				operator.Migrate(ctx)
+			},
+			func() {
+				metrics.Init(ctx)
+			},
+			func() {
+				body, err := lark.Build(
+					ctx,
+					"service started",
+					"INFO",
+					fmt.Sprintf("service started at: %s", types.Timestamp{Time: time.Now()}.String()),
+				)
+				if err != nil {
+					return
+				}
+				_ = robot_notifier.Push(ctx, body, nil)
 			},
 		)
 	})

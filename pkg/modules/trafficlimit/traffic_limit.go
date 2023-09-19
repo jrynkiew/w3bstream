@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	confid "github.com/machinefi/w3bstream/pkg/depends/conf/id"
+	"github.com/machinefi/w3bstream/pkg/depends/kit/logr"
 	"github.com/machinefi/w3bstream/pkg/depends/kit/sqlx"
 	"github.com/machinefi/w3bstream/pkg/depends/kit/sqlx/builder"
 	"github.com/machinefi/w3bstream/pkg/depends/kit/statusx"
@@ -275,7 +276,7 @@ func GetByProjectAndTypeMustDB(ctx context.Context, id types.SFID, apiType enums
 }
 
 func GetByProjectAndType(ctx context.Context, id types.SFID, apiType enums.TrafficLimitType) (*models.TrafficLimit, error) {
-	_, l := types.MustLoggerFromContext(ctx).Start(ctx, "trafficLimit.GetByProjectAndType")
+	_, l := logr.Start(ctx, "modules.trafficLimit.GetByProjectAndType")
 	defer l.End()
 
 	var (
@@ -289,7 +290,6 @@ func GetByProjectAndType(ctx context.Context, id types.SFID, apiType enums.Traff
 
 	valByte, err = rDB.GetKey(trafficKey)
 	if err != nil || valByte == nil {
-		l.Warn(err)
 		traffic, err = GetByProjectAndTypeMustDB(ctx, id, apiType)
 		if err != nil {
 			return nil, err
@@ -388,8 +388,10 @@ func Remove(ctx context.Context, r *CondArgs) error {
 }
 
 func TrafficLimit(ctx context.Context, apiType enums.TrafficLimitType) error {
+	ctx, l := logr.Start(ctx, "modules.trafficLimit.TrafficLimit")
+	defer l.End()
+
 	var (
-		l   = types.MustLoggerFromContext(ctx)
 		rDB = kvdb.MustRedisDBKeyFromContext(ctx)
 		prj = types.MustProjectFromContext(ctx)
 
@@ -402,7 +404,7 @@ func TrafficLimit(ctx context.Context, apiType enums.TrafficLimitType) error {
 		if !ok || !se.Is(status.TrafficLimitNotFound) {
 			return err
 		}
-		l.Warn(err)
+		// l.Warn(err)
 	}
 	if m != nil {
 		if valByte, err = rDB.IncrBy(fmt.Sprintf("%s::%s", prj.Name, m.ApiType.String()), []byte(strconv.Itoa(-1))); err != nil {

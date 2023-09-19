@@ -7,6 +7,7 @@ import (
 
 	"github.com/machinefi/w3bstream/pkg/depends/kit/httptransport/httpx"
 	"github.com/machinefi/w3bstream/pkg/depends/kit/kit"
+	"github.com/machinefi/w3bstream/pkg/depends/kit/logr"
 	"github.com/machinefi/w3bstream/pkg/depends/protocol/eventpb"
 	"github.com/machinefi/w3bstream/pkg/errors/status"
 	"github.com/machinefi/w3bstream/pkg/modules/event"
@@ -23,12 +24,16 @@ func (r *ForwardRequest) Path() string {
 }
 
 func Forward(ctx context.Context, channel string, ev *eventpb.Event) (interface{}, error) {
+	ctx, l := logr.Start(ctx, "modules.transporter.proxy.Forward")
+	defer l.End()
+
 	cli := types.MustProxyClientFromContext(ctx)
 
 	body := event.EventReq{
 		Channel:   channel,
 		EventType: ev.Header.GetEventType(),
 		EventID:   ev.Header.GetEventId(),
+		Timestamp: ev.Header.GetPubTime(),
 		Payload:   *(bytes.NewBuffer(ev.Payload)),
 	}
 
@@ -47,7 +52,7 @@ func Forward(ctx context.Context, channel string, ev *eventpb.Event) (interface{
 
 	rsp := &event.EventRsp{}
 	req := &ForwardRequest{EventReq: body}
-	if _, err := cli.Do(context.Background(), req, meta).Into(rsp); err != nil {
+	if _, err := cli.Do(ctx, req, meta).Into(rsp); err != nil {
 		return nil, err
 	}
 	return rsp, nil

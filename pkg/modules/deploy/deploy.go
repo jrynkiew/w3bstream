@@ -8,6 +8,7 @@ import (
 	"github.com/pkg/errors"
 
 	confid "github.com/machinefi/w3bstream/pkg/depends/conf/id"
+	"github.com/machinefi/w3bstream/pkg/depends/kit/logr"
 	"github.com/machinefi/w3bstream/pkg/depends/kit/sqlx"
 	"github.com/machinefi/w3bstream/pkg/depends/kit/sqlx/builder"
 	"github.com/machinefi/w3bstream/pkg/depends/x/contextx"
@@ -22,6 +23,9 @@ import (
 )
 
 func Init(ctx context.Context) error {
+	ctx, l := logr.Start(ctx, "modules.deploy.Init")
+	defer l.End()
+
 	var (
 		d = types.MustMgrDBExecutorFromContext(ctx)
 
@@ -32,20 +36,15 @@ func Init(ctx context.Context) error {
 		code []byte
 	)
 
-	_, l := types.MustLoggerFromContext(ctx).Start(ctx, "deploy.Init")
-	defer l.End()
-
 	list, err := ins.List(d, nil)
 	if err != nil {
 		l.Error(err)
 		return err
 	}
 
-	l.WithValues("total", len(list)).Info("")
-
 	for i := range list {
 		ins = &list[i]
-		l = l.WithValues("ins", ins.InstanceID, "app", ins.AppletID)
+		l = l.WithValues("ins", ins.InstanceID)
 
 		app = &models.Applet{RelApplet: models.RelApplet{AppletID: ins.AppletID}}
 		err = app.FetchByAppletID(d)
@@ -54,7 +53,6 @@ func Init(ctx context.Context) error {
 			continue
 		}
 
-		l = l.WithValues("res", app.ResourceID)
 		res, code, err = resource.GetContentBySFID(ctx, app.ResourceID)
 		if err != nil {
 			l.Warn(err)
@@ -67,7 +65,7 @@ func Init(ctx context.Context) error {
 		)(ctx)
 
 		state := ins.State
-		l = l.WithValues("state", ins.State)
+		l = l.WithValues("state_db", ins.State)
 
 		ins, err = UpsertByCode(ctx, nil, code, state, ins.InstanceID)
 		if err != nil {
@@ -76,10 +74,10 @@ func Init(ctx context.Context) error {
 		}
 
 		if ins.State != state {
-			l.WithValues("state_vm", ins.State).Warn(errors.New("create vm failed"))
+			l.WithValues("state_mem", ins.State).Warn(errors.New("create vm failed"))
 			continue
 		}
-		l.Info("vm started")
+		l.Info("started")
 	}
 	return nil
 }
@@ -240,6 +238,9 @@ func Remove(ctx context.Context, r *CondArgs) error {
 
 // UpsertByCode upsert instance and its config, and deploy wasm if needed
 func UpsertByCode(ctx context.Context, r *CreateReq, code []byte, state enums.InstanceState, old ...types.SFID) (*models.Instance, error) {
+	ctx, l := logr.Start(ctx, "modules.deploy.UpsertByCode")
+	defer l.End()
+
 	var (
 		idg       = confid.MustSFIDGeneratorFromContext(ctx)
 		forUpdate = false
@@ -306,9 +307,7 @@ func UpsertByCode(ctx context.Context, r *CreateReq, code []byte, state enums.In
 		},
 		func(d sqlx.DBExecutor) error {
 			if forUpdate {
-				if err := vm.DelInstance(ctx, ins.InstanceID); err != nil {
-					// Warn
-				}
+				_ = vm.DelInstance(ctx, ins.InstanceID)
 			}
 			_ctx, err := WithInstanceRuntimeContext(types.WithInstance(ctx, ins))
 			if err != nil {
@@ -320,7 +319,7 @@ func UpsertByCode(ctx context.Context, r *CreateReq, code []byte, state enums.In
 			}
 			ins.State, _ = vm.GetInstanceState(ins.InstanceID)
 			if ins.State != state {
-				// Warn
+				l.Warn(errors.New("unmatched instance state"))
 			}
 			return nil
 		},

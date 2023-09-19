@@ -13,9 +13,9 @@ import (
 
 	confid "github.com/machinefi/w3bstream/pkg/depends/conf/id"
 	conflog "github.com/machinefi/w3bstream/pkg/depends/conf/log"
+	confmq "github.com/machinefi/w3bstream/pkg/depends/conf/mq"
 	confmqtt "github.com/machinefi/w3bstream/pkg/depends/conf/mqtt"
 	confredis "github.com/machinefi/w3bstream/pkg/depends/conf/redis"
-	"github.com/machinefi/w3bstream/pkg/depends/kit/mq"
 	"github.com/machinefi/w3bstream/pkg/depends/kit/sqlx/builder"
 	"github.com/machinefi/w3bstream/pkg/depends/x/contextx"
 	"github.com/machinefi/w3bstream/pkg/enums"
@@ -23,6 +23,7 @@ import (
 	"github.com/machinefi/w3bstream/pkg/models"
 	"github.com/machinefi/w3bstream/pkg/modules/config"
 	"github.com/machinefi/w3bstream/pkg/modules/deploy"
+	optypes "github.com/machinefi/w3bstream/pkg/modules/operator/pool/types/mock"
 	wasmapi "github.com/machinefi/w3bstream/pkg/modules/vm/wasmapi/types/mock"
 	mock_sqlx "github.com/machinefi/w3bstream/pkg/test/mock_depends_kit_sqlx"
 	"github.com/machinefi/w3bstream/pkg/test/patch_models"
@@ -63,6 +64,7 @@ func TestDeploy(t *testing.T) {
 	}
 
 	wasmApiServer := wasmapi.NewMockServer(ctl)
+	operatorPool := optypes.NewMockPool(ctl)
 
 	ctx := contextx.WithContextCompose(
 		types.WithMgrDBExecutorContext(d),
@@ -74,13 +76,13 @@ func TestDeploy(t *testing.T) {
 		types.WithInstanceContext(&models.Instance{}),
 		types.WithWasmDBConfigContext(&types.WasmDBConfig{}),
 		types.WithRedisEndpointContext(&confredis.Redis{}),
-		types.WithTaskWorkerContext(&mq.TaskWorker{}),
-		types.WithTaskBoardContext(&mq.TaskBoard{}),
+		confmq.WithMqContext(&confmq.Config{}),
 		types.WithMqttBrokerContext(mqttBroker),
 		types.WithETHClientConfigContext(&types.ETHClientConfig{}),
 		types.WithChainConfigContext(&types.ChainConfig{}),
 		wasm.WithMQTTClientContext(mqttClient),
 		types.WithWasmApiServerContext(wasmApiServer),
+		types.WithOperatorPoolContext(operatorPool),
 	)(context.Background())
 
 	d.MockDBExecutor.EXPECT().T(gomock.Any()).Return(&builder.Table{}).AnyTimes()

@@ -17,6 +17,9 @@ import (
 
 	"github.com/machinefi/w3bstream/pkg/depends/conf/log"
 	conflog "github.com/machinefi/w3bstream/pkg/depends/conf/log"
+	"github.com/machinefi/w3bstream/pkg/depends/conf/logger"
+	"github.com/machinefi/w3bstream/pkg/depends/kit/logr"
+	"github.com/machinefi/w3bstream/pkg/depends/kit/mq"
 	"github.com/machinefi/w3bstream/pkg/depends/x/contextx"
 	"github.com/machinefi/w3bstream/pkg/depends/x/mapx"
 	"github.com/machinefi/w3bstream/pkg/enums"
@@ -52,9 +55,7 @@ type Instance struct {
 }
 
 func NewInstanceByCode(ctx context.Context, id types.SFID, code []byte, st enums.InstanceState) (i *Instance, err error) {
-	l := types.MustLoggerFromContext(ctx)
-
-	_, l = l.Start(ctx, "NewInstanceByCode")
+	ctx, l := logr.Start(ctx, "modules.vm.wasmtime.NewInstanceByCode")
 	defer l.End()
 
 	res := mapx.New[uint32, []byte]()
@@ -74,7 +75,6 @@ func NewInstanceByCode(ctx context.Context, id types.SFID, code []byte, st enums
 	state.Store(uint32(st))
 
 	ins := &Instance{
-		ctx:      ctx,
 		rt:       rt,
 		id:       id,
 		state:    state,
@@ -86,8 +86,6 @@ func NewInstanceByCode(ctx context.Context, id types.SFID, code []byte, st enums
 		ch:       make(chan rxgo.Item),
 	}
 
-	go ins.queueWorker()
-
 	flow, ok := wasm.FlowFromContext(ctx)
 	if ok {
 		ins.source = flow.Source.Strategies
@@ -98,7 +96,7 @@ func NewInstanceByCode(ctx context.Context, id types.SFID, code []byte, st enums
 		ins.sink = flow.Sink
 		go func() {
 			observable := ins.streamCompute(ins.ch)
-			ins.initSink(observable, ins.ctx)
+			ins.initSink(ins.ctx, observable)
 		}()
 	}
 
@@ -110,24 +108,27 @@ var _ wasm.Instance = (*Instance)(nil)
 func (i *Instance) ID() string { return i.id.String() }
 
 func (i *Instance) Start(ctx context.Context) error {
-	log.FromContext(ctx).WithValues("instance", i.ID()).Info("started")
-	i.setState(enums.INSTANCE_STATE__STARTED)
+	ctx, l := logr.Start(ctx, "modules.vm.Instance.Start", "instance_id", i.ID())
+	defer l.End()
+
+	i.state.Store(uint32(enums.INSTANCE_STATE__STARTED))
 	return nil
 }
 
 func (i *Instance) Stop(ctx context.Context) error {
-	log.FromContext(ctx).WithValues("instance", i.ID()).Info("stopped")
-	i.setState(enums.INSTANCE_STATE__STOPPED)
-	return nil
-}
+	ctx, l := logr.Start(ctx, "modules.vm.Instance.Stop", "instance_id", i.ID())
+	defer l.End()
 
-func (i *Instance) setState(st wasm.InstanceState) {
-	i.state.Store(uint32(st))
+	i.state.Store(uint32(enums.INSTANCE_STATE__STOPPED))
+	return nil
 }
 
 func (i *Instance) State() wasm.InstanceState { return wasm.InstanceState(i.state.Load()) }
 
 func (i *Instance) HandleEvent(ctx context.Context, fn, eventType string, data []byte) *wasm.EventHandleResult {
+	ctx, l := logr.Start(ctx, "modules.vm.wasmtime.Instance.HandleEvent")
+	defer l.End()
+
 	if i.State() != enums.INSTANCE_STATE__STARTED {
 		return &wasm.EventHandleResult{
 			InstanceID: i.id.String(),
@@ -136,58 +137,52 @@ func (i *Instance) HandleEvent(ctx context.Context, fn, eventType string, data [
 		}
 	}
 
-	select {
-	case <-time.After(5 * time.Second):
-		return &wasm.EventHandleResult{
-			InstanceID: i.id.String(),
-			Code:       wasm.ResultStatusCode_Failed,
-			ErrMsg:     "fail to add the event to the VM",
-		}
-	case i.msgQueue <- newTask(ctx, fn, eventType, data):
-		eventID := types.MustEventIDFromContext(ctx)
-		log.FromContext(ctx).WithValues("eid", eventID).Debug("put task in queue.")
-
-		return &wasm.EventHandleResult{
-			InstanceID: i.id.String(),
-			Code:       wasm.ResultStatusCode_OK,
-			ErrMsg:     "",
-		}
+	task := &Task{
+		EventID:   types.MustEventIDFromContext(ctx),
+		EventType: eventType,
+		Handler:   fn,
+		Payload:   data,
+		TaskState: mq.TASK_STATE__PENDING,
+		vm:        i,
+		retrieve:  make(chan *wasm.EventHandleResult),
 	}
+
+	job.Dispatch(ctx, task)
+	return task.Wait()
 }
 
-func (i *Instance) queueWorker() {
+func (i *Instance) queueWorker(ctx context.Context) {
 	for {
 		res := &wasm.EventHandleResult{}
 		task, more := <-i.msgQueue
-		log.FromContext(task.ctx).WithValues("eid", task.EventID).Debug(
-			fmt.Sprintf("queue len is %d and more is %t", len(i.msgQueue), more))
+
+		ctx, l := logger.NewSpanContext(ctx, "modules.vm.wasmtime.Instance.queueWorker")
+		l.WithValues("queue", len(i.msgQueue), "more", more).Debug("")
+
 		if !more {
 			return
 		}
-
-		log.FromContext(task.ctx).WithValues("eid", task.EventID).Debug("get task from queue.")
+		if task == nil {
+			return
+		}
+		l = l.WithValues("event_id", task.EventID)
 
 		for _, typ := range i.source {
 			if task.EventType == typ {
-				log.FromContext(task.ctx).WithValues("eid", task.EventID).Info("Flow_op start.")
+				l.Info("Flow_op start.")
 				i.ch <- rxgo.Of(task)
 				goto Next
 			}
 		}
 
-		res = i.handle(task.ctx, task)
-		log.FromContext(task.ctx).WithValues("eid", task.EventID).Debug("event process completed.")
+		res = i.handle(ctx, task)
 		if len(res.ErrMsg) > 0 {
-			job.Dispatch(i.ctx, job.NewWasmLogTask(i.ctx, conflog.Level(log.ErrorLevel).String(), "vmTask", res.ErrMsg))
+			job.Dispatch(ctx, job.NewWasmLogTask(ctx, log.ErrorLevel.String(), "vmTask", res.ErrMsg))
 		} else {
-			job.Dispatch(i.ctx, job.NewWasmLogTask(
-				i.ctx,
-				conflog.Level(log.InfoLevel).String(),
-				"vmTask",
-				fmt.Sprintf("the event, whose eventtype is %s, is successfully handled by %s, ", task.EventType, task.Handler),
-			))
+			job.Dispatch(ctx, job.NewWasmLogTask(ctx, log.InfoLevel.String(), "vmTask", fmt.Sprintf("the event, whose eventtype is %s, is successfully handled by %s, ", task.EventType, task.Handler)))
 		}
 	Next:
+		l.End()
 	}
 }
 
@@ -253,7 +248,7 @@ func (i *Instance) streamCompute(ch chan rxgo.Item) rxgo.Observable {
 	return obs
 }
 
-func (i *Instance) initSink(observable rxgo.Observable, ctx context.Context) {
+func (i *Instance) initSink(ctx context.Context, observable rxgo.Observable) {
 	c := observable.Observe()
 	for item := range c {
 
@@ -450,8 +445,8 @@ func (i *Instance) runOp(task ...*Task) ([]byte, bool) {
 		// if task is nil,  set rid is 0
 		var rid uint32 = 0
 		if t != nil {
-			rid = i.AddResource(t.ctx, []byte(t.EventType), t.Payload)
-			ctx = t.ctx
+			rid = i.AddResource([]byte(t.EventType), t.Payload)
+			// ctx = t.ctx
 			handler = t.Handler
 		}
 
@@ -459,7 +454,7 @@ func (i *Instance) runOp(task ...*Task) ([]byte, bool) {
 	}
 	defer func() {
 		for _, rid := range rids {
-			i.RmvResource(context.Background(), uint32(rid.(int32)))
+			i.RmvResource(uint32(rid.(int32)))
 		}
 	}()
 
@@ -484,16 +479,16 @@ func (i *Instance) handleByRid(ctx context.Context, handlerName string, rids ...
 	_, l = l.Start(ctx, "instance.handleByRid")
 	defer l.End()
 
-	if err := i.rt.Instantiate(); err != nil {
+	if err := i.rt.Instantiate(ctx); err != nil {
 		return &wasm.EventHandleResult{
 			InstanceID: i.id.String(),
 			ErrMsg:     err.Error(),
 			Code:       wasm.ResultStatusCode_Failed,
 		}
 	}
-	defer i.rt.Deinstantiate()
+	defer i.rt.Deinstantiate(ctx)
 
-	result, err := i.rt.Call(handlerName, rids...)
+	result, err := i.rt.Call(ctx, handlerName, rids...)
 	if err != nil {
 		l.Error(err)
 		return &wasm.EventHandleResult{
@@ -510,28 +505,28 @@ func (i *Instance) handleByRid(ctx context.Context, handlerName string, rids ...
 }
 
 func (i *Instance) handle(ctx context.Context, task *Task) *wasm.EventHandleResult {
-	l := types.MustLoggerFromContext(ctx)
-
-	_, l = l.Start(ctx, "instance.Handle")
+	ctx, l := logr.Start(ctx, "modules.vm.wasmtime.Instance.handle",
+		"event_id", task.EventID,
+		"instance_id", i.id,
+	)
 	defer l.End()
 
-	rid := i.AddResource(ctx, []byte(task.EventType), task.Payload)
-	defer i.RmvResource(ctx, rid)
+	l.Info("start processing task")
+	rid := i.AddResource([]byte(task.EventType), task.Payload)
+	defer i.RmvResource(rid)
 
-	if err := i.rt.Instantiate(); err != nil {
+	if err := i.rt.Instantiate(ctx); err != nil {
 		return &wasm.EventHandleResult{
 			InstanceID: i.id.String(),
 			ErrMsg:     err.Error(),
 			Code:       wasm.ResultStatusCode_Failed,
 		}
 	}
-	defer i.rt.Deinstantiate()
-
-	l.WithValues("eid", task.EventID).Debug("call wasm runtime.")
+	defer i.rt.Deinstantiate(ctx)
 
 	// TODO support wasm return data(not only code) for HTTP responding
-	result, err := i.rt.Call(task.Handler, int32(rid))
-	l.WithValues("eid", task.EventID).Debug("call wasm runtime completed.")
+	result, err := i.rt.Call(ctx, task.Handler, int32(rid))
+	l.Debug("call wasm runtime completed.")
 	if err != nil {
 		l.Error(err)
 		return &wasm.EventHandleResult{
@@ -547,7 +542,7 @@ func (i *Instance) handle(ctx context.Context, task *Task) *wasm.EventHandleResu
 	}
 }
 
-func (i *Instance) AddResource(ctx context.Context, eventType, data []byte) uint32 {
+func (i *Instance) AddResource(eventType, data []byte) uint32 {
 	var id = int32(uuid.New().ID() % uint32(maxInt))
 	i.res.Store(uint32(id), data)
 	i.evs.Store(uint32(id), eventType)
@@ -558,7 +553,7 @@ func (i *Instance) GetResource(id uint32) ([]byte, bool) {
 	return i.res.Load(id)
 }
 
-func (i *Instance) RmvResource(ctx context.Context, id uint32) {
+func (i *Instance) RmvResource(id uint32) {
 	i.res.Remove(id)
 	i.evs.Remove(id)
 }

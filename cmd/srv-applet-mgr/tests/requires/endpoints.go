@@ -14,18 +14,18 @@ import (
 	confid "github.com/machinefi/w3bstream/pkg/depends/conf/id"
 	confjwt "github.com/machinefi/w3bstream/pkg/depends/conf/jwt"
 	conflog "github.com/machinefi/w3bstream/pkg/depends/conf/log"
+	confmq "github.com/machinefi/w3bstream/pkg/depends/conf/mq"
 	"github.com/machinefi/w3bstream/pkg/depends/conf/mqtt"
 	"github.com/machinefi/w3bstream/pkg/depends/conf/postgres"
 	"github.com/machinefi/w3bstream/pkg/depends/conf/redis"
 	"github.com/machinefi/w3bstream/pkg/depends/kit/httptransport/client"
-	"github.com/machinefi/w3bstream/pkg/depends/kit/mq"
-	"github.com/machinefi/w3bstream/pkg/depends/kit/mq/mem_mq"
 	"github.com/machinefi/w3bstream/pkg/depends/kit/sqlx"
 	"github.com/machinefi/w3bstream/pkg/depends/kit/sqlx/migration"
 	"github.com/machinefi/w3bstream/pkg/depends/x/contextx"
 	"github.com/machinefi/w3bstream/pkg/depends/x/misc/retry"
 	"github.com/machinefi/w3bstream/pkg/depends/x/ptrx"
 	"github.com/machinefi/w3bstream/pkg/models"
+	"github.com/machinefi/w3bstream/pkg/modules/operator/pool"
 	"github.com/machinefi/w3bstream/pkg/modules/vm/wasmapi"
 	"github.com/machinefi/w3bstream/pkg/types"
 	"github.com/machinefi/w3bstream/pkg/types/wasm/kvdb"
@@ -202,8 +202,14 @@ func init() {
 		}
 	}
 
-	_tasks := mem_mq.New(0)
-	_workers := mq.NewTaskWorker(_tasks, mq.WithWorkerCount(3), mq.WithChannel("apis_tests"))
+	//_tasks := mem_mq.New(0)
+	//_workers := mq.NewTaskWorker(_tasks, mq.WithWorkerCount(3), mq.WithChannel("apis_tests"))
+	// tb := mq.NewTaskBoard(_tasks)
+
+	_taskMgr := &confmq.Config{}
+	_taskMgr.SetDefault()
+	_ = _taskMgr.Init()
+
 	_ethClients := &types.ETHClientConfig{
 		Endpoints: `{"4689": "https://babel-api.mainnet.iotex.io", "4690": "https://babel-api.testnet.iotex.io"}`,
 	}
@@ -214,9 +220,18 @@ func init() {
 	}
 	_chainConf.Init()
 
-	redisKvDB := kvdb.NewRedisDB(_redis)
+	// TODO instance
+	_risc0Conf := &types.Risc0Config{
+		Endpoint:        "127.0.0.1:3000",
+		CreateProofPath: "/ws/api/prove_file",
+	}
 
-	wasmApiServer, err := wasmapi.NewServer(conflog.Std(), _redis, _dbMgr, redisKvDB, _chainConf)
+	redisKvDB := kvdb.NewRedisDB(_redis)
+	operatorPool := pool.NewPool(_dbMgr)
+
+	sfIDGenerator := confid.MustNewSFIDGenerator()
+
+	wasmApiServer, err := wasmapi.NewServer(conflog.Std(), _redis, _dbMgr, redisKvDB, _chainConf, _taskMgr, operatorPool, sfIDGenerator, _risc0Conf)
 	if err != nil {
 		conflog.Std().Fatal(err)
 	}
@@ -228,17 +243,18 @@ func init() {
 		types.WithLoggerContext(conflog.Std()),
 		types.WithMqttBrokerContext(_broker),
 		conflog.WithLoggerContext(conflog.Std()),
-		confid.WithSFIDGeneratorContext(confid.MustNewSFIDGenerator()),
+		confid.WithSFIDGeneratorContext(sfIDGenerator),
 		confjwt.WithConfContext(_jwt),
 		types.WithUploadConfigContext(_uploadConfig),
 		types.WithFileSystemOpContext(_fsop),
 		types.WithRedisEndpointContext(_redis),
 		kvdb.WithRedisDBKeyContext(redisKvDB),
-		types.WithTaskWorkerContext(_workers),
-		types.WithTaskBoardContext(mq.NewTaskBoard(_tasks)),
+		confmq.WithMqContext(_taskMgr),
 		types.WithETHClientConfigContext(_ethClients),
 		types.WithChainConfigContext(_chainConf),
 		types.WithWasmApiServerContext(wasmApiServer),
+		types.WithProxyClientContext(&client.Client{}),
+		types.WithOperatorPoolContext(operatorPool),
 	)
 
 	_ctx = _injection(context.Background())

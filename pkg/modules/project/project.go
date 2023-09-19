@@ -8,13 +8,15 @@ import (
 	"github.com/pkg/errors"
 
 	confid "github.com/machinefi/w3bstream/pkg/depends/conf/id"
-	conflog "github.com/machinefi/w3bstream/pkg/depends/conf/log"
+	"github.com/machinefi/w3bstream/pkg/depends/conf/jwt"
+	"github.com/machinefi/w3bstream/pkg/depends/kit/logr"
 	"github.com/machinefi/w3bstream/pkg/depends/kit/sqlx"
 	"github.com/machinefi/w3bstream/pkg/depends/kit/sqlx/datatypes"
 	"github.com/machinefi/w3bstream/pkg/errors/status"
 	"github.com/machinefi/w3bstream/pkg/models"
 	"github.com/machinefi/w3bstream/pkg/modules/applet"
 	"github.com/machinefi/w3bstream/pkg/modules/config"
+	"github.com/machinefi/w3bstream/pkg/modules/publisher"
 	"github.com/machinefi/w3bstream/pkg/modules/transporter/mqtt"
 	"github.com/machinefi/w3bstream/pkg/types"
 	"github.com/machinefi/w3bstream/pkg/types/wasm"
@@ -119,6 +121,9 @@ func ListDetail(ctx context.Context, r *ListReq) (*ListDetailRsp, error) {
 }
 
 func Create(ctx context.Context, r *CreateReq) (*CreateRsp, error) {
+	ctx, l := logr.Start(ctx, "modules.project.Create")
+	defer l.End()
+
 	d := types.MustMgrDBExecutorFromContext(ctx)
 	acc := types.MustAccountFromContext(ctx)
 	idg := confid.MustSFIDGeneratorFromContext(ctx)
@@ -128,6 +133,7 @@ func Create(ctx context.Context, r *CreateReq) (*CreateRsp, error) {
 		RelAccount:  models.RelAccount{AccountID: acc.AccountID},
 		ProjectName: models.ProjectName{Name: r.Name},
 		ProjectBase: models.ProjectBase{
+			Public:      r.Public,
 			Version:     r.Version,
 			Proto:       r.Proto,
 			Description: r.Description,
@@ -177,14 +183,23 @@ func Create(ctx context.Context, r *CreateReq) (*CreateRsp, error) {
 			rsp.Flow = r.Flow
 			return nil
 		},
+		func(d sqlx.DBExecutor) error {
+			if prj.Public == datatypes.TRUE {
+				if _, err := publisher.CreateAnonymousPublisher(ctx); err != nil {
+					return err
+				}
+			}
+
+			return nil
+		},
 	).Do()
 	if err != nil {
+		l.Error(err)
 		return nil, err
 	}
 
 	if err = mqtt.Subscribe(ctx, prj.Name); err != nil {
-		conflog.FromContext(ctx).WithValues("prj", prj.Name).
-			Warn(errors.Wrap(err, "channel create failed"))
+		l.WithValues("prj", prj.Name).Warn(errors.Wrap(err, "channel create failed"))
 	}
 	rsp.ChannelState = datatypes.BooleanValue(err == nil)
 
@@ -192,6 +207,9 @@ func Create(ctx context.Context, r *CreateReq) (*CreateRsp, error) {
 }
 
 func RemoveBySFID(ctx context.Context, id types.SFID) (err error) {
+	ctx, l := logr.Start(ctx, "modules.project.RemoveBySFID", "porject_id", id)
+	defer l.End()
+
 	var (
 		d = types.MustMgrDBExecutorFromContext(ctx)
 		p *models.Project
@@ -204,7 +222,8 @@ func RemoveBySFID(ctx context.Context, id types.SFID) (err error) {
 				return err
 			}
 			mqtt.Stop(ctx, p.Name)
-			conflog.FromContext(ctx).WithValues("prj", p.Name).Info("stop subscribing")
+			l = l.WithValues("project_name", p.Name)
+			l.Info("stop subscribing")
 			return nil
 		},
 		func(d sqlx.DBExecutor) error {
@@ -225,9 +244,16 @@ func RemoveBySFID(ctx context.Context, id types.SFID) (err error) {
 }
 
 func Init(ctx context.Context) error {
-	d := types.MustMgrDBExecutorFromContext(ctx)
-	_, l := conflog.FromContext(ctx).Start(ctx, "project.Init")
+	ctx, l := logr.Start(ctx, "modules.project.Init")
 	defer l.End()
+
+	d := types.MustMgrDBExecutorFromContext(ctx)
+
+	user, err := (&models.Account{}).List(d, nil)
+	for _, u := range user {
+		ctx = types.WithAccount(ctx, &u)
+		break
+	}
 
 	data, err := (&models.Project{}).List(d, nil)
 	if err != nil {
@@ -241,6 +267,12 @@ func Init(ctx context.Context) error {
 			l.Warn(errors.Wrap(err, "channel create failed"))
 		}
 		l.Info("start subscribe")
+
+		if v.Public == datatypes.TRUE && jwt.WithAnonymousPublisherFn == nil {
+			if _, err = publisher.CreateAnonymousPublisher(ctx); err != nil {
+				l.Warn(errors.Wrap(err, "anonymous publisher create failed"))
+			}
+		}
 	}
 	return nil
 }
