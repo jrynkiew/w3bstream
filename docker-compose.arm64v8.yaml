@@ -36,7 +36,7 @@ services:
       - ${WS_WORKING_DIR:-.}/asserts:/w3bstream/asserts
 
   w3bstream-studio:
-    image: ${WS_STUDIO_IMAGE:-ghcr.io/machinefi/w3bstream-studio:v1.5.3}
+    image: ${WS_STUDIO_IMAGE:-ghcr.io/machinefi/w3bstream-studio:v1.5.7}
     container_name: w3bstream-studio
     restart: always
     platform: linux/x86_64
