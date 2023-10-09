@@ -68,6 +68,11 @@ clean:
 run_docker:
 	@WS_WORKING_DIR=${WS_WORKING_DIR} WS_BACKEND_IMAGE=${WS_BACKEND_IMAGE} WS_STUDIO_IMAGE=${WS_STUDIO_IMAGE} docker-compose -p w3bstream -f ${DOCKER_COMPOSE_FILE} up -d
 
+# push docker docker images for arm64v8 architecture
+.PHONY: push_docker
+push_docker_arm64v8:
+	docker push ${WS_BACKEND_IMAGE}
+
 # stop server running in docker containers
 .PHONY: stop_docker
 stop_docker:
