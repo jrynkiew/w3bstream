@@ -1,5 +1,5 @@
 DOCKER_COMPOSE_FILE=./docker-compose.yaml
-WS_BACKEND_IMAGE = $(USER)/w3bstream:791afa1
+WS_BACKEND_IMAGE = jrpc1/w3bstream:amd64
 WS_WORKING_DIR=/home/gitlab-runner/w3bstream/working_dir
 
 .DEFAULT_GOAL := all
