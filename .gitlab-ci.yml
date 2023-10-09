@@ -1,0 +1,26 @@
+stages:
+  - build
+  # - publish
+  - run
+
+build:
+  tags:
+    - docker
+  stage: build
+  script:
+    - make images
+
+# publish:
+#   tags:
+#     - docker
+#   stage: publish-arm64v8
+#   script:
+#     - docker login -u $DockerUsername -p $DockerPassword
+#     - make push_docker_arm64v8
+
+run:
+  tags:
+    - docker
+  stage: run
+  script:
+    - make run_docker
