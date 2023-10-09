@@ -7,7 +7,7 @@ services:
       - "postgres"
       - "mqtt_server"
       - "redis"
-    container_name: w3bstream
+    container_name: w3bstream-amd64
     working_dir: /w3bstream
     restart: always
     ports:
@@ -37,7 +37,7 @@ services:
 
   mqtt_server:
     image: eclipse-mosquitto:1.6.15
-    container_name: mosquitto
+    container_name: mosquitto-amd64
     restart: always
     ports:
       - "1883:1883"
@@ -46,6 +46,7 @@ services:
 
   postgres:
     image: postgres:13
+    container_name: postgres-amd64
     restart: always
     command:
       [
@@ -63,6 +64,7 @@ services:
 
   redis:
     image: 'redis:6.2'
+    container_name: redis-amd64
     restart: always
     volumes:
       - ${WS_WORKING_DIR:-.}/redisdb:/data
