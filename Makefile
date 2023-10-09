@@ -70,7 +70,7 @@ run_docker:
 
 # push docker docker images for arm64v8 architecture
 .PHONY: push_docker
-push_docker_arm64v8:
+push_docker:
 	docker push ${WS_BACKEND_IMAGE}
 
 # stop server running in docker containers
