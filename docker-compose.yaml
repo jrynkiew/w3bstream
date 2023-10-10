@@ -83,7 +83,7 @@ services:
       - "5432:5432"
     
   prometheus:
-    image: prometheus:latest
+    image: prom/prometheus:latest
     depends_on:
       - 'w3bapp'
     user: root
