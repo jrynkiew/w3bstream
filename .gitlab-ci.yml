@@ -1,26 +1,26 @@
 stages:
-  - build
-  - publish
+  # - build
+  # - publish
   - run
 
-build:
-  tags:
-    - docker
-  stage: build
-  script:
-    - make images
+# build:
+#   tags:
+#     - docker
+#   stage: build
+#   script:
+#     - make images
 
-publish:
-  tags:
-    - docker
-  stage: publish
-  script:
-    - docker login -u $DockerUsername -p $DockerPassword
-    - make push_docker
+# publish:
+#   tags:
+#     - docker
+#   stage: publish
+#   script:
+#     - docker login -u $DockerUsername -p $DockerPassword
+#     - make push_docker
 
 run:
   tags:
-    - docker
+    - w3bstream
   stage: run
   script:
     - make run_docker
