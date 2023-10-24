@@ -2,7 +2,7 @@ version: "3.6"
 
 services:
   w3bapp:
-    image: ${WS_BACKEND_IMAGE:-ghcr.io/machinefi/w3bstream:v1.5.9}
+    image: ${WS_BACKEND_IMAGE:-ghcr.io/machinefi/w3bstream:latest}
     depends_on:
       - 'postgres'
       - 'mqtt_server'
@@ -26,6 +26,7 @@ services:
       SRV_APPLET_MGR__MonitorDB_ConnMaxLifetime: 10m
       SRV_APPLET_MGR__MonitorDB_PoolSize: 5
       SRV_APPLET_MGR__WasmDBConfig_Endpoint: postgresql://${POSTGRES_USER:-w3badmin}:${POSTGRES_PASSWORD:-PaSsW0Rd}@postgres:5432
+      SRV_APPLET_MGR__UploadConf_FilesizeLimitBytes: 1964707
       SRV_APPLET_MGR__MqttBroker_Server: mqtt://mqtt_server:1883
       SRV_APPLET_MGR__MetricsCenter_Endpoint: http://prometheus:9090
       SRV_APPLET_MGR__Server_Port: '8888'
